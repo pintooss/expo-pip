@@ -3,15 +3,15 @@ package expo.modules.pip
 import android.app.PictureInPictureParams
 import android.graphics.Rect
 import android.os.Build
-import android.util.Log
 import android.util.Rational
 import androidx.core.os.bundleOf
+import androidx.fragment.app.FragmentActivity
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 const val moduleName = "ExpoPip"
 
-class ExpoPipModule : Module() {
+class ExpoPipModule : Module(), PictureInPictureHelperListener {
   override fun definition() = ModuleDefinition {
    
     Name(moduleName)
@@ -24,12 +24,13 @@ class ExpoPipModule : Module() {
 
     Function("enterPipMode", this@ExpoPipModule::enterPipMode)
 
-    OnActivityEntersForeground(this@ExpoPipModule::sendPictureInPictureModeChanged)
+    OnCreate(this@ExpoPipModule::attachFragment)
 
-    OnActivityEntersBackground(this@ExpoPipModule::sendPictureInPictureModeChanged)
+    OnDestroy(this@ExpoPipModule::detachFragment)
+      
   }
 
-      private fun buildPictureInPictureParams(options: ParamsRecord): PictureInPictureParams? {
+    private fun buildPictureInPictureParams(options: ParamsRecord): PictureInPictureParams? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val pictureInPictureParamsBuilder = PictureInPictureParams.Builder()
 
@@ -52,7 +53,6 @@ class ExpoPipModule : Module() {
 
             options.sourceRectHint?.let {
                 val rect = Rect(it.left,it.top, it.right,it.bottom)
-                Log.d("ExpoPip", rect.toString())
                 pictureInPictureParamsBuilder.setSourceRectHint(rect)
             }
 
@@ -71,26 +71,13 @@ class ExpoPipModule : Module() {
         }
     }
 
-    private fun sendPictureInPictureModeChanged() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val isInPictureInPictureMode =
-                appContext.currentActivity?.isInPictureInPictureMode ?: false
-            this@ExpoPipModule.sendEvent(
-                "onPipModeChange",
-                bundleOf("isInPipMode" to isInPictureInPictureMode)
-            )
-        }
-    }
-
     private fun enterPipMode(options: ParamsRecord) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
             val pictureInPictureParams = buildPictureInPictureParams(options)
 
             pictureInPictureParams?.let {
                 appContext.currentActivity?.enterPictureInPictureMode(it)
             }
-
         }
     }
 
@@ -101,4 +88,37 @@ class ExpoPipModule : Module() {
             false
         }
     }
+
+    fun attachFragment(){
+        (appContext.currentActivity as? FragmentActivity)?.let { activity ->
+            val fragment = PictureInPictureHelperFragment()
+            fragment.setListener(this)
+            activity.supportFragmentManager
+                .beginTransaction()
+                .add(fragment, PictureInPictureHelperFragment.id)
+                .commit()
+        }
+    }
+
+    fun detachFragment(){
+        (appContext.currentActivity as? FragmentActivity)?.let { activity ->
+            val fragment = activity.supportFragmentManager
+                .findFragmentByTag(PictureInPictureHelperFragment.id)
+
+            fragment?.let { fragment ->
+                activity.supportFragmentManager
+                    .beginTransaction()
+                    .remove(fragment)
+                    .commitAllowingStateLoss()
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChange(isInPictureInPictureMode: Boolean) {
+        this@ExpoPipModule.sendEvent(
+            "onPipModeChange",
+            bundleOf("isInPipMode" to isInPictureInPictureMode)
+        )
+    }
+    
 }
